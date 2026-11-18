@@ -6,9 +6,9 @@ applications, job hunt, projects, hobbies, life admin and more. Built with Claud
 **Live site:** https://nachiketnaik-cmd.github.io/Mission-Control/
 
 ## Features
-- Horizontal **lanes** you scroll through (trackpad, the chips along the bottom, or the scroll wheel).
-- **Drag** a lane by its header (⠿ grip) to reorder it; **drag its right edge** to resize it,
-  and double-click that edge to reset. Lane order and widths are remembered in your browser.
+- **Movable, resizable blocks** — drag any block by its header (⠿ grip) to place it anywhere;
+  drag its right edge, bottom edge, or corner to resize width and height. Positions and sizes
+  persist in your browser, and **Reset layout** in the top bar restores the default arrangement.
 - **Editable boards** — tick items off, double-click text to edit, `+` to add, `×` to delete,
   across Tasks, Grad applications, Job hunt, Life admin, Projects, Hobbies and Saved.
   Everything saves locally in your browser (`localStorage`).

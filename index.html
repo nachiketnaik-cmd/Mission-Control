@@ -59,24 +59,24 @@
     background:var(--red-soft);color:var(--red);padding:7px 12px;border-radius:999px;white-space:nowrap;
   }
   .focuschip.ok{background:var(--green-soft);color:var(--green)}
+  .resetbtn{border:1px solid var(--line);background:var(--lane);color:var(--muted);font-family:var(--sans);font-size:12px;padding:7px 11px;border-radius:999px;cursor:pointer;white-space:nowrap}
+  .resetbtn:hover{color:var(--ink);border-color:var(--accent)}
   .focuschip .pulse{width:7px;height:7px;border-radius:50%;background:currentColor;animation:p 1.8s infinite}
   @keyframes p{0%,100%{opacity:1}50%{opacity:.35}}
 
   /* ---- Strip of lanes ---- */
-  .strip{
-    flex:1; display:flex; gap:14px; padding:14px 16px 8px;
-    overflow-x:auto; overflow-y:hidden; scroll-snap-type:x proximity;
-    scroll-behavior:smooth;
-  }
-  .strip::-webkit-scrollbar{height:10px}
-  .strip::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px;border:2px solid var(--bg)}
+  .board{ flex:1; position:relative; overflow:auto; background:var(--bg); }
+  .board::-webkit-scrollbar{width:12px;height:12px}
+  .board::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px;border:3px solid var(--bg)}
+  .canvas{ position:relative; min-width:100%; min-height:100%; }
   .lane{
-    flex:0 0 332px; max-width:332px; height:100%; display:flex; flex-direction:column;
+    position:absolute; display:flex; flex-direction:column;
     background:var(--lane); border:1px solid var(--line); border-radius:var(--radius);
-    box-shadow:var(--shadow); scroll-snap-align:start; overflow:hidden; position:relative;
+    box-shadow:var(--shadow); overflow:hidden;
   }
-  .lane.pin{flex-basis:300px;max-width:300px;border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),var(--shadow)}
-  .lane.wide{flex-basis:360px;max-width:360px}
+  .lane.pin{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),var(--shadow)}
+  .lane.dragging{opacity:.95;box-shadow:0 16px 44px rgba(0,0,0,.28);cursor:grabbing}
+  .lane.resizing{box-shadow:0 0 0 1px var(--accent),0 10px 30px rgba(0,0,0,.2)}
   .lane-head{
     flex:0 0 auto; padding:13px 15px 11px; border-bottom:1px solid var(--line2);
     display:flex; align-items:center; gap:9px; background:var(--lane);
@@ -85,9 +85,6 @@
   .lane-head:active{cursor:grabbing}
   .grip{color:var(--faint);font-size:13px;line-height:1;letter-spacing:-2px;opacity:.55;transition:.12s}
   .lane-head:hover .grip{opacity:1;color:var(--accent)}
-  .lane.dragging{opacity:.5;box-shadow:0 10px 30px rgba(0,0,0,.22)}
-  .strip.drag-active{scroll-snap-type:none}
-  .strip.drag-active .lane-body{pointer-events:none}
   .lane-head .ico{font-size:16px;line-height:1}
   .lane-head h2{font-size:13px;font-weight:650;letter-spacing:.01em;flex:1}
   .lane-head .count{
@@ -190,12 +187,14 @@
 
   .snap{font-size:10px;color:var(--faint);padding:0 2px;margin-top:auto}
 
-  /* resize handle (drag a lane's right edge) */
-  .resizer{position:absolute;top:0;right:0;width:9px;height:100%;cursor:col-resize;z-index:6;touch-action:none}
-  .resizer::after{content:"";position:absolute;top:50%;right:2px;transform:translateY(-50%);width:3px;height:36px;border-radius:3px;background:var(--line);opacity:0;transition:.12s}
-  .lane:hover .resizer::after{opacity:.7}
-  .resizer:hover::after{opacity:1;background:var(--accent);height:60px}
-  .lane.resizing{box-shadow:0 0 0 1px var(--accent),var(--shadow)}
+  /* resize handles: right edge (width), bottom edge (height), corner (both) */
+  .rz{position:absolute;z-index:6;touch-action:none}
+  .rz-r{top:0;right:0;width:10px;height:100%;cursor:ew-resize}
+  .rz-b{left:0;bottom:0;height:10px;width:100%;cursor:ns-resize}
+  .rz-se{right:0;bottom:0;width:18px;height:18px;cursor:nwse-resize;z-index:7}
+  .rz-se::after{content:"";position:absolute;right:3px;bottom:3px;width:8px;height:8px;border-right:2px solid var(--faint);border-bottom:2px solid var(--faint);opacity:0;transition:.12s}
+  .lane:hover .rz-se::after{opacity:.75}
+  .rz-se:hover::after{opacity:1;border-color:var(--accent)}
 
   /* built-in Claude chat dock */
   .dock{flex:0 0 auto;background:var(--lane);border-top:1px solid var(--line);box-shadow:0 -2px 8px rgba(16,24,40,.05);z-index:15}
@@ -235,10 +234,11 @@
   </div>
   <div class="spacer"></div>
   <div class="clock" id="clock"></div>
+  <button class="resetbtn" id="resetLayout" title="Restore the default block layout">⟲ Reset layout</button>
   <div class="focuschip" id="focus"><span class="pulse"></span><span id="focustext">—</span></div>
 </div>
 
-<div class="strip" id="strip"></div>
+<div class="board" id="board"><div class="canvas" id="canvas"></div></div>
 
 <div class="indicator" id="indicator"></div>
 
@@ -541,87 +541,73 @@ lane({id:"connect", icon:"🔌", title:"What Claude can reach", wide:true, rende
   body.appendChild(note);
 }});
 
-/* ============ mount ============ */
-const strip=document.getElementById("strip");
+/* ============ mount: free-moving, resizable blocks ============ */
+const board=document.getElementById("board");
+const canvas=document.getElementById("canvas");
 const indicator=document.getElementById("indicator");
 const chipById={};
+const GAP=14, MINW=240, MINH=150;
+let ztop=10;
 
-/* apply saved lane order (drag-to-reorder persists here) */
-try{
-  const ord=JSON.parse(localStorage.getItem("mc:order")||"[]");
-  if(ord.length) lanes.sort((a,b)=>{const ia=ord.indexOf(a.id),ib=ord.indexOf(b.id);return (ia<0?999:ia)-(ib<0?999:ib);});
-}catch(e){}
+function loadLayout(){ try{ return JSON.parse(localStorage.getItem("mc:layout")||"{}"); }catch(e){ return {}; } }
+function saveLayout(){ const m={}; canvas.querySelectorAll(".lane").forEach(l=>{ m[l.id.slice(5)]={x:Math.round(l.offsetLeft),y:Math.round(l.offsetTop),w:Math.round(l.offsetWidth),h:Math.round(l.offsetHeight)}; }); try{ localStorage.setItem("mc:layout",JSON.stringify(m)); }catch(e){} }
+let layout=loadLayout();
 
-/* ---- drag-to-reorder lanes ---- */
-let dragEl=null;
-function getDragAfter(x){
-  const els=[...strip.querySelectorAll(".lane:not(.dragging)")];
-  let best={d:-Infinity,el:null};
-  for(const c of els){ const b=c.getBoundingClientRect(); const off=x-(b.left+b.width/2);
-    if(off<0 && off>best.d) best={d:off,el:c}; }
-  return best.el;
+function place(el,x,y,w,h){ el.style.left=x+"px"; el.style.top=y+"px"; el.style.width=w+"px"; el.style.height=h+"px"; }
+function fitCanvas(){ let mw=0,mh=0; canvas.querySelectorAll(".lane").forEach(l=>{ mw=Math.max(mw,l.offsetLeft+l.offsetWidth); mh=Math.max(mh,l.offsetTop+l.offsetHeight); }); canvas.style.width=(mw+GAP)+"px"; canvas.style.height=(mh+GAP)+"px"; }
+function defaultFor(cfg,x){ const w=cfg.wide?360:(cfg.pin?300:332); const h=Math.max(MINH,(board.clientHeight||640)-2*GAP); return {x,y:GAP,w,h}; }
+
+/* drag a block by its header to move it anywhere */
+function makeMovable(el, handle){
+  let sx,sy,ox,oy,on=false; handle.style.touchAction="none";
+  handle.addEventListener("pointerdown",e=>{ if(e.target.closest(".rz")) return; on=true; sx=e.clientX; sy=e.clientY; ox=el.offsetLeft; oy=el.offsetTop; el.classList.add("dragging"); el.style.zIndex=++ztop; try{handle.setPointerCapture(e.pointerId);}catch(_){} e.preventDefault(); });
+  handle.addEventListener("pointermove",e=>{ if(!on)return; el.style.left=Math.max(0,ox+(e.clientX-sx))+"px"; el.style.top=Math.max(0,oy+(e.clientY-sy))+"px"; });
+  const end=e=>{ if(!on)return; on=false; el.classList.remove("dragging"); try{handle.releasePointerCapture(e.pointerId);}catch(_){} fitCanvas(); saveLayout(); };
+  handle.addEventListener("pointerup",end); handle.addEventListener("pointercancel",end);
 }
-function saveOrder(){
-  const ids=[...strip.querySelectorAll(".lane")].map(l=>l.id.slice(5));
-  try{ localStorage.setItem("mc:order",JSON.stringify(ids)); }catch(e){}
-  ids.forEach(id=>{ const c=chipById[id]; if(c) indicator.appendChild(c); }); // keep chips in sync
+/* drag an edge/corner to resize width and/or height */
+function makeResizer(el,h){
+  const horiz=h.classList.contains("rz-r")||h.classList.contains("rz-se");
+  const vert =h.classList.contains("rz-b")||h.classList.contains("rz-se");
+  let sx,sy,ow,oh,on=false; h.style.touchAction="none";
+  h.addEventListener("pointerdown",e=>{ e.preventDefault(); e.stopPropagation(); on=true; sx=e.clientX; sy=e.clientY; ow=el.offsetWidth; oh=el.offsetHeight; el.classList.add("resizing"); el.style.zIndex=++ztop; try{h.setPointerCapture(e.pointerId);}catch(_){} });
+  h.addEventListener("pointermove",e=>{ if(!on)return; if(horiz) el.style.width=Math.max(MINW,Math.min(1000,ow+(e.clientX-sx)))+"px"; if(vert) el.style.height=Math.max(MINH,oh+(e.clientY-sy))+"px"; });
+  const end=e=>{ if(!on)return; on=false; el.classList.remove("resizing"); try{h.releasePointerCapture(e.pointerId);}catch(_){} fitCanvas(); saveLayout(); };
+  h.addEventListener("pointerup",end); h.addEventListener("pointercancel",end);
 }
-strip.addEventListener("dragover",e=>{
-  if(!dragEl) return; e.preventDefault();
-  const after=getDragAfter(e.clientX);
-  if(after==null){ if(strip.lastElementChild!==dragEl) strip.appendChild(dragEl); }
-  else if(after!==dragEl) strip.insertBefore(dragEl,after);
-});
-strip.addEventListener("drop",e=>{ if(dragEl) e.preventDefault(); });
 
-/* ---- per-lane width (drag right edge to resize) ---- */
-function loadWidths(){ try{ return JSON.parse(localStorage.getItem("mc:widths")||"{}"); }catch(e){ return {}; } }
-function saveWidth(id,w){ const m=loadWidths(); m[id]=Math.round(w); try{ localStorage.setItem("mc:widths",JSON.stringify(m)); }catch(e){} }
-function removeWidth(id){ const m=loadWidths(); delete m[id]; try{ localStorage.setItem("mc:widths",JSON.stringify(m)); }catch(e){} }
-const widths=loadWidths();
-
+let cursorX=GAP;
 lanes.forEach((cfg)=>{
   const el=document.createElement("div"); el.className="lane"+(cfg.pin?" pin":"")+(cfg.wide?" wide":"");
   el.id="lane-"+cfg.id;
-  const head=document.createElement("div"); head.className="lane-head"; head.setAttribute("draggable","true");
+  const head=document.createElement("div"); head.className="lane-head";
   const count=document.createElement("span"); count.className="count";
-  head.innerHTML=`<span class="grip" title="Drag to reorder">⠿</span><span class="ico">${cfg.icon}</span><h2>${cfg.title}</h2>`;
+  head.innerHTML=`<span class="grip" title="Drag to move">⠿</span><span class="ico">${cfg.icon}</span><h2>${cfg.title}</h2>`;
   head.appendChild(count);
   const bodyEl=document.createElement("div"); bodyEl.className="lane-body";
-  el.appendChild(head); el.appendChild(bodyEl); strip.appendChild(el);
-  if(widths[cfg.id]){ el.style.flex="0 0 "+widths[cfg.id]+"px"; el.style.maxWidth=widths[cfg.id]+"px"; }
-  // right-edge resize handle
-  const rez=document.createElement("div"); rez.className="resizer"; rez.title="Drag to resize · double-click to reset"; el.appendChild(rez);
-  (function(lane,id){
-    let sx=0,sw=0,on=false;
-    rez.addEventListener("pointerdown",e=>{ e.preventDefault(); e.stopPropagation(); on=true; sx=e.clientX; sw=lane.getBoundingClientRect().width; lane.classList.add("resizing"); try{rez.setPointerCapture(e.pointerId);}catch(_){}});
-    rez.addEventListener("pointermove",e=>{ if(!on)return; const w=Math.max(240,Math.min(720, sw+(e.clientX-sx))); lane.style.flex="0 0 "+w+"px"; lane.style.maxWidth=w+"px"; });
-    const end=e=>{ if(!on)return; on=false; lane.classList.remove("resizing"); try{rez.releasePointerCapture(e.pointerId);}catch(_){} saveWidth(id, lane.getBoundingClientRect().width); };
-    rez.addEventListener("pointerup",end); rez.addEventListener("pointercancel",end);
-    rez.addEventListener("dblclick",e=>{ e.stopPropagation(); lane.style.flex=""; lane.style.maxWidth=""; removeWidth(id); });
-  })(el,cfg.id);
+  el.appendChild(head); el.appendChild(bodyEl);
+  el.insertAdjacentHTML("beforeend",'<div class="rz rz-r"></div><div class="rz rz-b"></div><div class="rz rz-se"></div>');
+  canvas.appendChild(el);
+
+  const saved=layout[cfg.id], d=defaultFor(cfg,cursorX);
+  if(saved && isFinite(saved.x)){ place(el,saved.x,saved.y,saved.w,saved.h); cursorX=Math.max(cursorX,saved.x+saved.w)+GAP; }
+  else { place(el,d.x,d.y,d.w,d.h); cursorX=d.x+d.w+GAP; }
+
   cfg.countEl=count;
-  cfg.render(bodyEl, cfg);
-  if(count.textContent===""){ // static lanes: count children-ish
-    if(cfg.id==="inbox") count.textContent = inbox.reduce((n,g)=>n+g.items.length,0);
-    else if(cfg.id==="today") count.textContent = calendar.reduce((n,d)=>n+d.events.length,0);
-    else count.remove();
-  }
-  head.addEventListener("dragstart",e=>{
-    dragEl=el; strip.classList.add("drag-active");
-    e.dataTransfer.effectAllowed="move";
-    try{ e.dataTransfer.setData("text/plain",el.id); e.dataTransfer.setDragImage(el,24,24); }catch(_){}
-    requestAnimationFrame(()=>el.classList.add("dragging"));
-  });
-  head.addEventListener("dragend",()=>{
-    el.classList.remove("dragging"); strip.classList.remove("drag-active"); dragEl=null; saveOrder();
-  });
-  // indicator chip
+  cfg.render(bodyEl,cfg);
+  if(count.textContent===""){ if(cfg.id==="inbox") count.textContent=inbox.reduce((n,g)=>n+g.items.length,0); else if(cfg.id==="today") count.textContent=calendar.reduce((n,d)=>n+d.events.length,0); else count.remove(); }
+
+  makeMovable(el,head);
+  el.querySelectorAll(".rz").forEach(hh=>makeResizer(el,hh));
+
   const chip=document.createElement("button"); chip.textContent=cfg.title;
-  chip.onclick=()=>{ document.getElementById("lane-"+cfg.id).scrollIntoView({behavior:"smooth",inline:"start",block:"nearest"});
-    document.querySelectorAll(".indicator button").forEach(b=>b.classList.remove("active")); chip.classList.add("active"); };
+  chip.onclick=()=>{ el.scrollIntoView({behavior:"smooth",inline:"nearest",block:"nearest"}); document.querySelectorAll(".indicator button").forEach(b=>b.classList.remove("active")); chip.classList.add("active"); };
   chipById[cfg.id]=chip; indicator.appendChild(chip);
 });
+fitCanvas();
+
+const resetBtn=document.getElementById("resetLayout");
+if(resetBtn) resetBtn.onclick=()=>{ try{localStorage.removeItem("mc:layout");}catch(e){} layout={}; let cx=GAP; lanes.forEach(cfg=>{ const el=document.getElementById("lane-"+cfg.id); const d=defaultFor(cfg,cx); place(el,d.x,d.y,d.w,d.h); el.style.zIndex=""; cx=d.x+d.w+GAP; }); fitCanvas(); saveLayout(); };
 
 /* ============ top bar clock + greeting + focus ============ */
 function tick(){
@@ -645,11 +631,7 @@ tick(); setInterval(tick,30000);
 /* mark first indicator active */
 indicator.firstChild && indicator.firstChild.classList.add("active");
 
-/* horizontal scroll with vertical wheel when hovering empty strip */
-strip.addEventListener("wheel",e=>{
-  if(e.target.closest(".lane-body")) return; // let lanes scroll vertically
-  if(Math.abs(e.deltaY)>Math.abs(e.deltaX)){ strip.scrollLeft+=e.deltaY; e.preventDefault(); }
-},{passive:false});
+/* the board scrolls natively in both directions */
 
 /* ============ built-in Claude chat (sample capability) ============ */
 (function(){
