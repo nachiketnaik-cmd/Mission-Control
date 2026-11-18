@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mission Control — Nachiket</title>
+<style>
+  :root{
+    --bg:#eceef1; --lane:#ffffff; --lane2:#fafbfc;
+    --ink:#171a1f; --muted:#6b7280; --faint:#9aa1a9;
+    --line:#e6e8ec; --line2:#eef0f3;
+    --accent:#2f6df6; --accent-soft:#e8f0ff;
+    --amber:#b45309; --amber-soft:#fef3c7;
+    --green:#15803d; --green-soft:#dcfce7;
+    --red:#b91c1c; --red-soft:#fee2e2;
+    --grey:#4b5563; --grey-soft:#eef1f4;
+    --purple:#6d28d9; --purple-soft:#ede9fe;
+    --radius:14px; --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);
+    --mono:"Times New Roman",Times,serif;
+    --sans:"Times New Roman",Times,Georgia,serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0c0e11; --lane:#15181c; --lane2:#121519;
+      --ink:#e9eaec; --muted:#9aa1a9; --faint:#6b727b;
+      --line:#242a31; --line2:#1d2228;
+      --accent:#6a9bff; --accent-soft:#17233f;
+      --amber:#fbbf24; --amber-soft:#3a2d0c;
+      --green:#4ade80; --green-soft:#0f2e1a;
+      --red:#f87171; --red-soft:#3a1514;
+      --grey:#cbd3dc; --grey-soft:#20262d;
+      --purple:#c4b5fd; --purple-soft:#241a40;
+      --shadow:0 1px 2px rgba(0,0,0,.4);
+    }
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:var(--sans); background:var(--bg); color:var(--ink);
+    height:100vh; overflow:hidden; display:flex; flex-direction:column;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* ---- Top bar (menu-bar style) ---- */
+  .topbar{
+    flex:0 0 auto; height:52px; display:flex; align-items:center; gap:16px;
+    padding:0 16px; background:var(--lane); border-bottom:1px solid var(--line);
+    box-shadow:var(--shadow); z-index:20;
+  }
+  .brand{display:flex;align-items:center;gap:10px;min-width:0}
+  .brand .dot{width:11px;height:11px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .brand h1{font-size:15px;font-weight:650;letter-spacing:-.01em;white-space:nowrap}
+  .brand .sub{font-size:12px;color:var(--faint);white-space:nowrap}
+  .spacer{flex:1}
+  .clock{font-variant-numeric:tabular-nums;font-size:13px;color:var(--muted);white-space:nowrap}
+  .clock b{color:var(--ink);font-weight:600}
+  .focuschip{
+    display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;
+    background:var(--red-soft);color:var(--red);padding:7px 12px;border-radius:999px;white-space:nowrap;
+  }
+  .focuschip.ok{background:var(--green-soft);color:var(--green)}
+  .focuschip .pulse{width:7px;height:7px;border-radius:50%;background:currentColor;animation:p 1.8s infinite}
+  @keyframes p{0%,100%{opacity:1}50%{opacity:.35}}
+
+  /* ---- Strip of lanes ---- */
+  .strip{
+    flex:1; display:flex; gap:14px; padding:14px 16px 8px;
+    overflow-x:auto; overflow-y:hidden; scroll-snap-type:x proximity;
+    scroll-behavior:smooth;
+  }
+  .strip::-webkit-scrollbar{height:10px}
+  .strip::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px;border:2px solid var(--bg)}
+  .lane{
+    flex:0 0 332px; max-width:332px; height:100%; display:flex; flex-direction:column;
+    background:var(--lane); border:1px solid var(--line); border-radius:var(--radius);
+    box-shadow:var(--shadow); scroll-snap-align:start; overflow:hidden; position:relative;
+  }
+  .lane.pin{flex-basis:300px;max-width:300px;border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),var(--shadow)}
+  .lane.wide{flex-basis:360px;max-width:360px}
+  .lane-head{
+    flex:0 0 auto; padding:13px 15px 11px; border-bottom:1px solid var(--line2);
+    display:flex; align-items:center; gap:9px; background:var(--lane);
+    cursor:grab; user-select:none;
+  }
+  .lane-head:active{cursor:grabbing}
+  .grip{color:var(--faint);font-size:13px;line-height:1;letter-spacing:-2px;opacity:.55;transition:.12s}
+  .lane-head:hover .grip{opacity:1;color:var(--accent)}
+  .lane.dragging{opacity:.5;box-shadow:0 10px 30px rgba(0,0,0,.22)}
+  .strip.drag-active{scroll-snap-type:none}
+  .strip.drag-active .lane-body{pointer-events:none}
+  .lane-head .ico{font-size:16px;line-height:1}
+  .lane-head h2{font-size:13px;font-weight:650;letter-spacing:.01em;flex:1}
+  .lane-head .count{
+    font-size:11px;font-weight:600;color:var(--muted);background:var(--grey-soft);
+    padding:2px 8px;border-radius:999px;min-width:22px;text-align:center;
+  }
+  .lane-body{flex:1;overflow-y:auto;padding:11px 12px 16px;display:flex;flex-direction:column;gap:9px}
+  .lane-body::-webkit-scrollbar{width:8px}
+  .lane-body::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px}
+  .lane-note{font-size:11.5px;color:var(--faint);line-height:1.5;padding:2px 2px 4px}
+
+  /* ---- Cards ---- */
+  .card{
+    background:var(--lane2); border:1px solid var(--line2); border-radius:10px;
+    padding:10px 11px; font-size:12.5px; line-height:1.45; position:relative;
+  }
+  .card .t{font-weight:600;color:var(--ink);display:block;margin-bottom:2px}
+  .card .m{color:var(--muted);font-size:11.5px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .card a.open{color:var(--accent);text-decoration:none;font-weight:600;font-size:11px}
+  .card a.open:hover{text-decoration:underline}
+  .tag{font-size:10px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;padding:2px 7px;border-radius:999px;white-space:nowrap}
+  .tag.act{background:var(--red-soft);color:var(--red)}
+  .tag.due{background:var(--amber-soft);color:var(--amber)}
+  .tag.go{background:var(--accent-soft);color:var(--accent)}
+  .tag.done{background:var(--green-soft);color:var(--green)}
+  .tag.info{background:var(--grey-soft);color:var(--grey)}
+  .tag.money{background:var(--purple-soft);color:var(--purple)}
+
+  /* ---- Calendar day ---- */
+  .day{margin-bottom:4px}
+  .day .dh{font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;margin:6px 2px 7px;display:flex;justify-content:space-between}
+  .day .dh .rel{color:var(--accent);font-weight:700;text-transform:none;letter-spacing:0}
+  .ev{display:flex;gap:9px;padding:7px 9px;border-radius:9px;background:var(--lane2);border:1px solid var(--line2);margin-bottom:6px}
+  .ev .tm{font-variant-numeric:tabular-nums;font-size:11px;color:var(--muted);min-width:52px;font-weight:600}
+  .ev .ti{font-size:12.5px;font-weight:550}
+  .ev.big{border-color:var(--red);background:var(--red-soft)}
+  .ev.big .ti{color:var(--red);font-weight:700}
+  .ev.big .tm{color:var(--red)}
+
+  /* ---- Editable items ---- */
+  .item{display:flex;align-items:flex-start;gap:8px;padding:8px 9px;border-radius:9px;background:var(--lane2);border:1px solid var(--line2);group}
+  .item:hover{border-color:var(--line)}
+  .item .box{flex:0 0 auto;width:17px;height:17px;border:1.6px solid var(--faint);border-radius:5px;cursor:pointer;margin-top:1px;display:flex;align-items:center;justify-content:center;transition:.12s}
+  .item .box:hover{border-color:var(--accent)}
+  .item.done .box{background:var(--green);border-color:var(--green)}
+  .item .box svg{width:11px;height:11px;stroke:#fff;stroke-width:3;fill:none;opacity:0;transition:.12s}
+  .item.done .box svg{opacity:1}
+  .item .txt{flex:1;font-size:12.5px;line-height:1.4;outline:none;min-width:0;word-break:break-word}
+  .item.done .txt{color:var(--faint);text-decoration:line-through}
+  .item .txt:focus{background:var(--accent-soft);border-radius:4px;box-shadow:0 0 0 2px var(--accent-soft)}
+  .item .txt a{color:var(--accent)}
+  .item .del{flex:0 0 auto;opacity:.32;cursor:pointer;color:var(--faint);font-size:16px;line-height:1;padding:0 2px;background:none;border:none;transition:.12s}
+  .item:hover .del{opacity:.7}
+  .item .del:hover{opacity:1;color:var(--red)}
+  .item .del:hover{opacity:1;color:var(--red)}
+  .pill{flex:0 0 auto;cursor:pointer;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;padding:3px 7px;border-radius:999px;margin-top:1px;user-select:none;white-space:nowrap}
+  .meta{font-size:10.5px;color:var(--faint);margin-top:2px}
+
+  .addrow{display:flex;gap:6px;margin-top:2px}
+  .addrow input{
+    flex:1;font-family:var(--sans);font-size:12px;padding:8px 10px;border:1px dashed var(--line);
+    border-radius:9px;background:transparent;color:var(--ink);outline:none;
+  }
+  .addrow input:focus{border-color:var(--accent);border-style:solid;background:var(--lane2)}
+  .addrow button{
+    flex:0 0 auto;border:none;background:var(--accent);color:#fff;font-weight:700;font-size:16px;
+    width:34px;border-radius:9px;cursor:pointer;line-height:1;
+  }
+  .addrow button:hover{filter:brightness(1.05)}
+
+  /* ---- Launch grid ---- */
+  .launch{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .launch a{
+    display:flex;flex-direction:column;gap:5px;padding:11px 10px;border-radius:10px;
+    background:var(--lane2);border:1px solid var(--line2);text-decoration:none;color:var(--ink);transition:.12s;
+  }
+  .launch a:hover{border-color:var(--accent);transform:translateY(-1px)}
+  .launch a .e{font-size:19px}
+  .launch a .l{font-size:11.5px;font-weight:600}
+  .launch a .s{font-size:10px;color:var(--faint)}
+
+  /* ---- Connect pane status ---- */
+  .st{display:flex;gap:9px;padding:9px 10px;border-radius:9px;background:var(--lane2);border:1px solid var(--line2);font-size:11.5px;line-height:1.45}
+  .st .dot{flex:0 0 auto;width:9px;height:9px;border-radius:50%;margin-top:4px}
+  .st.g .dot{background:var(--green)} .st.y .dot{background:var(--amber)} .st.r .dot{background:var(--red)}
+  .st b{font-weight:650} .st .d{color:var(--muted)}
+
+  /* ---- Strip indicator ---- */
+  .indicator{
+    flex:0 0 auto;display:flex;gap:5px;padding:7px 16px 10px;overflow-x:auto;background:var(--bg);
+  }
+  .indicator::-webkit-scrollbar{display:none}
+  .indicator button{
+    border:none;background:var(--lane);color:var(--muted);font-family:var(--sans);
+    font-size:11px;font-weight:600;padding:5px 11px;border-radius:999px;cursor:pointer;white-space:nowrap;
+    border:1px solid var(--line);transition:.12s;
+  }
+  .indicator button:hover{color:var(--ink);border-color:var(--accent)}
+  .indicator button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+  .snap{font-size:10px;color:var(--faint);padding:0 2px;margin-top:auto}
+
+  /* resize handle (drag a lane's right edge) */
+  .resizer{position:absolute;top:0;right:0;width:9px;height:100%;cursor:col-resize;z-index:6;touch-action:none}
+  .resizer::after{content:"";position:absolute;top:50%;right:2px;transform:translateY(-50%);width:3px;height:36px;border-radius:3px;background:var(--line);opacity:0;transition:.12s}
+  .lane:hover .resizer::after{opacity:.7}
+  .resizer:hover::after{opacity:1;background:var(--accent);height:60px}
+  .lane.resizing{box-shadow:0 0 0 1px var(--accent),var(--shadow)}
+
+  /* built-in Claude chat dock */
+  .dock{flex:0 0 auto;background:var(--lane);border-top:1px solid var(--line);box-shadow:0 -2px 8px rgba(16,24,40,.05);z-index:15}
+  .dock-head{height:46px;display:flex;align-items:center;gap:10px;padding:0 16px;cursor:pointer;user-select:none}
+  .dock-head:hover{background:var(--lane2)}
+  .dh-title{font-size:13px;font-weight:650}
+  .dh-status{font-size:11px;color:var(--faint)}
+  .dh-status.ok{color:var(--green)}
+  .dh-caret{margin-left:auto;color:var(--muted);font-size:12px}
+  .dock-body{display:none;flex-direction:column;height:min(320px,42vh);border-top:1px solid var(--line2)}
+  .dock[data-open="1"] .dock-body{display:flex}
+  .chat-msgs{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+  .chat-hint{font-size:12.5px;color:var(--faint);line-height:1.55;max-width:600px}
+  .msg{font-size:13px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;padding:9px 12px;border-radius:13px;max-width:min(680px,82%)}
+  .msg.user{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:4px}
+  .msg.assistant{align-self:flex-start;background:var(--lane2);border:1px solid var(--line2);border-bottom-left-radius:4px}
+  .msg.thinking{color:var(--faint);font-style:italic}
+  .chat-input{flex:0 0 auto;display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line2);align-items:flex-end}
+  .chat-input textarea{flex:1;resize:none;font-family:var(--sans);font-size:13px;line-height:1.4;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--lane2);color:var(--ink);outline:none;max-height:120px}
+  .chat-input textarea:focus{border-color:var(--accent)}
+  .chat-input textarea:disabled{opacity:.55}
+  .chat-input button{flex:0 0 auto;width:40px;height:40px;border:none;border-radius:12px;background:var(--accent);color:#fff;font-size:15px;cursor:pointer}
+  .chat-input button:disabled{opacity:.4;cursor:default}
+  .chat-input #chatStop{background:var(--red)}
+  .hidden{display:none !important}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <span class="dot"></span>
+    <div style="min-width:0">
+      <h1 id="greet">Mission Control</h1>
+    </div>
+    <span class="sub" id="brandsub">· your life, in lanes</span>
+  </div>
+  <div class="spacer"></div>
+  <div class="clock" id="clock"></div>
+  <div class="focuschip" id="focus"><span class="pulse"></span><span id="focustext">—</span></div>
+</div>
+
+<div class="strip" id="strip"></div>
+
+<div class="indicator" id="indicator"></div>
+
+<div class="dock" id="dock" data-open="0">
+  <div class="dock-head" id="dockHead">
+    <span class="dh-title">💬 Ask Claude</span>
+    <span class="dh-status" id="dockStatus">connecting…</span>
+    <span class="dh-caret" id="dockCaret">▴</span>
+  </div>
+  <div class="dock-body">
+    <div class="chat-msgs" id="chatMsgs">
+      <div class="chat-hint" id="chatHint">This is the same Claude, right here in your dashboard. Ask about your schedule, applications, or anything else — I can see your live board. I can't read your email or the web from in here, though; for that, ask me in a normal Claude chat.</div>
+    </div>
+    <div class="chat-input">
+      <textarea id="chatBox" rows="1" placeholder="Message Claude…" disabled></textarea>
+      <button id="chatSend" title="Send" disabled>➤</button>
+      <button id="chatStop" class="hidden" title="Stop">■</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ============ snapshot context ============ */
+const SNAPSHOT = "19 Nov 2026";
+const TZ = "Asia/Kolkata";
+const GMAIL = "https://mail.google.com/mail/u/0/#inbox";
+const gm = id => `https://mail.google.com/mail/?authuser=nachiketnaik2004@gmail.com#all/${id}`;
+
+/* ============ LIVE snapshot: Calendar ============ */
+const calendar = [
+  { date:"2026-11-19", label:"Thu 19 Nov", events:[
+    {t:"1:00 PM", s:"Think about Baruch points"},
+    {t:"3:15 PM", s:"Study for Deloitte sat test"},
+    {t:"8:00 PM", s:"Do ATX practice"},
+    {t:"9:45 PM", s:"Fill Baruch form"},
+  ]},
+  { date:"2026-11-20", label:"Fri 20 Nov", events:[
+    {t:"1:00 PM", s:"Think about Baruch points"},
+    {t:"3:15 PM", s:"Study for Deloitte sat test"},
+    {t:"8:00 PM", s:"Do ATX practice"},
+    {t:"9:45 PM", s:"Fill Baruch form"},
+  ]},
+  { date:"2026-11-21", label:"Sat 21 Nov", events:[
+    {t:"9:00 AM", s:"Deloitte exam", big:true},
+    {t:"1:15 PM", s:"Erasmus university open day"},
+  ]},
+];
+
+/* ============ LIVE snapshot: Inbox triage ============ */
+const inbox = [
+  { group:"Needs action", items:[
+    {t:"Baruch College — activate account & continue application", m:"Baruch College (CUNY)", tag:"act", id:"thread-f:1882221029628982573"},
+    {t:"Warwick (WBS) — take the Warwick Test (condition of MSc F&M offer)", m:"MSc Finance & Management", tag:"act", id:"thread-f:1882203930508538604"},
+    {t:"Deloitte — Day 1 invite from Vinsys (B13)", m:"nachnaik.ext@deloitte.com", tag:"act", id:"thread-f:1882205100232111009"},
+    {t:"Great Lakes PGPM/PGDM — applications close 26 Nov", m:"Great Lakes Institute", tag:"due", id:"thread-f:1882123881277619847"},
+    {t:"JIMS PGDM — Elite round closes 27 Nov", m:"Jagan Institute (JIMS)", tag:"due", id:"thread-f:1882125970413962452"},
+  ]},
+  { group:"Applications & status", items:[
+    {t:"Bayes / City, Univ. of London — documents received", m:"MSc Finance · 260064449", tag:"info", id:"thread-f:1882118182574023786"},
+    {t:"Texas McCombs MS Finance — assessment completed", m:"Texas McCombs", tag:"done", id:"thread-f:1882124478314124410"},
+    {t:"JPMorgan — 2 applications received", m:"JPMorganChase HR", tag:"info", id:"thread-f:1882203538430245669"},
+    {t:"JPMorgan — CIB Risk Associate: not selected", m:"JPMorganChase HR", tag:"info", id:"thread-f:1882202178829001627"},
+    {t:"Erasmus University — open day (also on Sat)", m:"Erasmus", tag:"info", id:null},
+  ]},
+  { group:"Money", items:[
+    {t:"SBI — monthly e-account statement", m:"State Bank of India", tag:"money", id:"thread-f:1882147850174516900"},
+    {t:"Saraswat Bank — credit of ₹1,000", m:"Saraswat Bank alert", tag:"money", id:"thread-f:1882126099579739034"},
+  ]},
+  { group:"Learning & FYI", items:[
+    {t:"Coursera — certificate ready: Claude Cowork, Skills & Plugins", m:"Coursera", tag:"done", id:"thread-f:1882201334419480947"},
+    {t:"CFA Program — exam prep resources", m:"CFA Institute", tag:"info", id:"thread-f:1882167332336349093"},
+  ]},
+  { group:"Newsletters & promos", items:[
+    {t:"~20 newsletters / job-alert / promo emails", m:"Substack, Naukri, Adzuna, YMGrad, upGrad, Air India, Michael Page…", tag:"info", id:null, note:"Mostly safe to skim or archive. Ask me to triage/unsubscribe these for you."},
+  ]},
+];
+
+/* ============ Editable boards (seeded, you own them) ============ */
+const seed = {
+  tasks:[
+    {x:"Activate Baruch College application account"},
+    {x:"Fill Baruch application form (scheduled tonight)"},
+    {x:"Complete the Warwick Test (condition of WBS offer)"},
+    {x:"Prep for Deloitte exam — Sat 21 Nov, 9 AM"},
+    {x:"Confirm Deloitte 'Day 1 / Vinsys B13' onboarding"},
+    {x:"Great Lakes application — deadline 26 Nov"},
+    {x:"JIMS Elite round — deadline 27 Nov"},
+    {x:"Decide on Erasmus open day (Sat 1:15 PM)"},
+  ],
+  grad:[
+    {x:"Baruch College (CUNY)", p:"Action needed"},
+    {x:"Warwick — WBS MSc Finance & Mgmt", p:"Condition pending"},
+    {x:"Bayes / City, Univ. of London — MSc Finance", p:"Docs in"},
+    {x:"Texas McCombs — MS Finance", p:"Done"},
+    {x:"Erasmus University (Rotterdam)", p:"Exploring"},
+    {x:"Great Lakes — PGPM / PGDM", p:"Deadline"},
+    {x:"JIMS — PGDM", p:"Deadline"},
+  ],
+  jobs:[
+    {x:"JPMorgan — multiple applications in", p:"Waiting"},
+    {x:"JPMorgan — CIB Risk Associate", p:"Rejected"},
+    {x:"Deloitte — role / onboarding", p:"In progress"},
+    {x:"Naukri / Adzuna / Neo alerts — review weekly", p:"Exploring"},
+  ],
+  admin:[
+    {x:"Cloud backup of laptop"},
+    {x:"Sort & organise photos"},
+    {x:"Clean up Downloads & Desktop"},
+    {x:"Organise browser bookmarks"},
+    {x:"Back up offer letters & key documents"},
+    {x:"Skim SBI & Saraswat statements"},
+  ],
+  serious:[
+    {x:"🎓 Grad-school applications — Fall 2027 intake"},
+    {x:"💼 Deloitte exam + onboarding"},
+    {x:"📈 CFA / finance study track"},
+  ],
+  fun:[
+    {x:"Add a fun project… (double-click to edit)"},
+  ],
+  hobbies:[
+    {x:"Astronomy / space — SEDS, Celestia (edit me)"},
+    {x:"Markets & investing"},
+    {x:"Substack / long-form reading"},
+  ],
+  saved:[
+    {x:"LinkedIn saved posts → https://www.linkedin.com/my-items/saved-posts/"},
+    {x:"Instagram saved → https://www.instagram.com/your_activity/saved/"},
+    {x:"Paste a bookmark or link to read later…"},
+  ],
+};
+
+/* ============ storage (per-viewer, safe) ============ */
+let mem = {};
+function load(key){
+  try{ const v = localStorage.getItem("mc:"+key); if(v) return JSON.parse(v); }catch(e){}
+  if(mem[key]) return mem[key];
+  // first load: clone seed, give ids
+  const data = (seed[key]||[]).map((o,i)=>({id:key+"-"+Date.now()+"-"+i, text:o.x, done:false, pill:o.p||null}));
+  return data;
+}
+function save(key,data){
+  mem[key]=data;
+  try{ localStorage.setItem("mc:"+key, JSON.stringify(data)); }catch(e){}
+}
+
+/* ============ helpers ============ */
+const esc = s => s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const linkify = s => esc(s).replace(/(https?:\/\/[^\s]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>');
+function daysUntil(dateStr){
+  const now=new Date();
+  const d=new Date(dateStr+"T09:00:00+05:30");
+  return Math.ceil((d - now)/86400000);
+}
+const PILLS = {
+  "Action needed":"act","Condition pending":"due","Docs in":"go","Done":"done",
+  "Exploring":"info","Deadline":"due","Waiting":"go","Rejected":"info","In progress":"go"
+};
+const PILLCYCLE = ["Action needed","In progress","Waiting","Condition pending","Docs in","Exploring","Deadline","Done","Rejected"];
+function pillClass(p){ return PILLS[p]||"info"; }
+
+/* ============ lane builders ============ */
+const lanes = [];
+function lane(cfg){ lanes.push(cfg); }
+
+/* 1. Today / up next (live) */
+lane({id:"today", icon:"📅", title:"Today & up next", pin:true, render(body){
+  calendar.forEach(day=>{
+    const n = daysUntil(day.date);
+    let rel = ""; if(n===0) rel="Today"; else if(n===1) rel="Tomorrow"; else if(n>1) rel="in "+n+" days";
+    const dh=document.createElement("div"); dh.className="day";
+    dh.innerHTML=`<div class="dh"><span>${day.label}</span><span class="rel">${rel}</span></div>`;
+    day.events.forEach(ev=>{
+      const e=document.createElement("div"); e.className="ev"+(ev.big?" big":"");
+      e.innerHTML=`<span class="tm">${ev.t}</span><span class="ti">${esc(ev.s)}${ev.big?" ⭐":""}</span>`;
+      dh.appendChild(e);
+    });
+    body.appendChild(dh);
+  });
+  const note=document.createElement("div"); note.className="lane-note";
+  note.innerHTML=`Snapshot of your Google Calendar · ${SNAPSHOT}. <a class="open" href="https://calendar.google.com" target="_blank">Open Calendar →</a>`;
+  body.appendChild(note);
+}});
+
+/* 2. Inbox triage (live) */
+lane({id:"inbox", icon:"✉️", title:"Inbox triage", render(body){
+  inbox.forEach(g=>{
+    const h=document.createElement("div"); h.className="dh"; h.style.cssText="font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;margin:8px 2px 2px";
+    h.textContent=g.group; body.appendChild(h);
+    g.items.forEach(it=>{
+      const c=document.createElement("div"); c.className="card";
+      c.innerHTML=`<span class="t">${esc(it.t)}</span>
+        <div class="m"><span class="tag ${it.tag}">${it.tag==='act'?'do':it.tag==='due'?'deadline':it.tag}</span><span>${esc(it.m)}</span></div>
+        ${it.note?`<div class="meta">${esc(it.note)}</div>`:""}
+        ${it.id?`<div style="margin-top:6px"><a class="open" href="${gm(it.id)}" target="_blank">Open in Gmail →</a></div>`:""}`;
+      body.appendChild(c);
+    });
+  });
+  const note=document.createElement("div"); note.className="lane-note";
+  note.innerHTML=`Snapshot of your inbox · ${SNAPSHOT}. Not live — ask me to refresh any time. <a class="open" href="${GMAIL}" target="_blank">Open Gmail →</a>`;
+  body.appendChild(note);
+}});
+
+/* editable lane factory */
+function editable(cfg){
+  lane({id:cfg.id, icon:cfg.icon, title:cfg.title, wide:cfg.wide, editable:true, kind:cfg.kind, note:cfg.note, render(body, self){
+    let data = load(cfg.id);
+    const list=document.createElement("div"); list.style.cssText="display:flex;flex-direction:column;gap:8px"; body.appendChild(list);
+    function redraw(){
+      list.innerHTML="";
+      data.forEach(item=>{
+        const row=document.createElement("div"); row.className="item"+(item.done?" done":"");
+        // checkbox (checklist kinds)
+        if(cfg.kind==="check"){
+          const box=document.createElement("div"); box.className="box";
+          box.innerHTML='<svg viewBox="0 0 24 24"><polyline points="4 12 10 18 20 6"/></svg>';
+          box.onclick=()=>{item.done=!item.done; save(cfg.id,data); redraw();};
+          row.appendChild(box);
+        }
+        // status pill (status kinds)
+        if(cfg.kind==="status" && item.pill){
+          const pill=document.createElement("span"); pill.className="pill tag "+pillClass(item.pill);
+          pill.textContent=item.pill;
+          pill.title="click to change";
+          pill.onclick=()=>{ let i=PILLCYCLE.indexOf(item.pill); item.pill=PILLCYCLE[(i+1)%PILLCYCLE.length]; save(cfg.id,data); redraw(); };
+          row.appendChild(pill);
+        }
+        const txt=document.createElement("div"); txt.className="txt"; txt.contentEditable=true; txt.spellcheck=false;
+        txt.innerHTML=linkify(item.text);
+        txt.onblur=()=>{ item.text=txt.innerText.trim(); save(cfg.id,data); };
+        txt.onkeydown=e=>{ if(e.key==="Enter"){e.preventDefault();txt.blur();} };
+        row.appendChild(txt);
+        const del=document.createElement("button"); del.className="del"; del.innerHTML="×"; del.title="delete";
+        del.onclick=()=>{ data=data.filter(d=>d!==item); save(cfg.id,data); redraw(); };
+        row.appendChild(del);
+        list.appendChild(row);
+      });
+      self.countEl.textContent = cfg.kind==="check" ? (data.filter(d=>!d.done).length) : data.length;
+    }
+    redraw();
+    // add row
+    const add=document.createElement("div"); add.className="addrow";
+    const inp=document.createElement("input"); inp.placeholder=cfg.placeholder||"Add…";
+    const btn=document.createElement("button"); btn.textContent="+";
+    function addItem(){ const v=inp.value.trim(); if(!v)return;
+      const o={id:cfg.id+"-"+Date.now(),text:v,done:false,pill:cfg.kind==="status"?"Exploring":null};
+      data.push(o); save(cfg.id,data); inp.value=""; redraw(); }
+    btn.onclick=addItem; inp.onkeydown=e=>{ if(e.key==="Enter") addItem(); };
+    add.appendChild(inp); add.appendChild(btn); body.appendChild(add);
+    if(cfg.note){ const n=document.createElement("div"); n.className="lane-note"; n.innerHTML=cfg.note; body.appendChild(n); }
+  }});
+}
+
+/* 3-11 editable lanes */
+editable({id:"tasks", icon:"✅", title:"Tasks & to-dos", kind:"check", placeholder:"Add a task…"});
+editable({id:"grad", icon:"🎓", title:"Grad-school applications", kind:"status", placeholder:"Add a school…", wide:true, note:"Click a status pill to cycle it. Seeded from your inbox — tweak freely."});
+editable({id:"jobs", icon:"💼", title:"Job hunt", kind:"status", placeholder:"Add a role / company…"});
+editable({id:"admin", icon:"🧹", title:"Life admin", kind:"check", placeholder:"Add an admin task…"});
+editable({id:"serious", icon:"🚀", title:"Serious projects", kind:"notes", placeholder:"Add a project…"});
+editable({id:"fun", icon:"🎨", title:"Fun projects", kind:"notes", placeholder:"Add a fun idea…"});
+editable({id:"hobbies", icon:"🌱", title:"Hobbies", kind:"notes", placeholder:"Add a hobby…", note:"I guessed a few from your calendar & reading — edit or clear them."});
+editable({id:"saved", icon:"🔖", title:"Saved & read-later", kind:"notes", placeholder:"Paste a link…", wide:true, note:"LinkedIn & Instagram saved can't auto-sync (no API). Paste links here, or open them from the buttons."});
+
+/* 12. Quick launch */
+lane({id:"launch", icon:"🚀", title:"Quick launch", render(body){
+  const links=[
+    {e:"✉️",l:"Gmail",s:"inbox",u:GMAIL},
+    {e:"📅",l:"Calendar",s:"schedule",u:"https://calendar.google.com"},
+    {e:"📁",l:"Drive",s:"files",u:"https://drive.google.com"},
+    {e:"📝",l:"Notion",s:"notes",u:"https://notion.so"},
+    {e:"🗒️",l:"Keep",s:"quick notes",u:"https://keep.google.com"},
+    {e:"💼",l:"LinkedIn",s:"saved posts",u:"https://www.linkedin.com/my-items/saved-posts/"},
+    {e:"📷",l:"Instagram",s:"saved",u:"https://www.instagram.com/your_activity/saved/"},
+    {e:"🎓",l:"Coursera",s:"courses",u:"https://www.coursera.org"},
+    {e:"📊",l:"CFA",s:"study",u:"https://www.cfainstitute.org"},
+    {e:"💬",l:"Claude",s:"ask me",u:"https://claude.ai"},
+  ];
+  const grid=document.createElement("div"); grid.className="launch";
+  links.forEach(k=>{ const a=document.createElement("a"); a.href=k.u; a.target="_blank"; a.rel="noopener";
+    a.innerHTML=`<span class="e">${k.e}</span><span class="l">${k.l}</span><span class="s">${k.s}</span>`; grid.appendChild(a); });
+  body.appendChild(grid);
+}});
+
+/* 13. Connect more / honest status */
+lane({id:"connect", icon:"🔌", title:"What Claude can reach", wide:true, render(body){
+  const rows=[
+    {c:"g",b:"Gmail & Google Calendar",d:"Live. I can read, triage, draft, and refresh these panes on request."},
+    {c:"y",b:"Your laptop files & bookmarks",d:"Click “Add folder” in the Claude desktop app, then I can read & organise them."},
+    {c:"y",b:"Notion & Google Drive",d:"One-click to connect (Notion has a connector; Drive is installed but off)."},
+    {c:"r",b:"Google Keep",d:"No API exists — can't be connected. Use the Keep button to open it."},
+    {c:"r",b:"LinkedIn & Instagram saved",d:"No API, and both block automation. Keep links in the Saved lane instead."},
+    {c:"r",b:"Your past Claude chats",d:"No tool lets me list or reorganise your chat history, and memory is off. I can't clean these up."},
+  ];
+  rows.forEach(r=>{ const d=document.createElement("div"); d.className="st "+r.c;
+    d.innerHTML=`<span class="dot"></span><div><b>${r.b}</b><div class="d">${r.d}</div></div>`; body.appendChild(d); });
+  const note=document.createElement("div"); note.className="lane-note";
+  note.innerHTML=`<b>How to use this:</b> this page is yours to edit (everything saves in your browser). When you want the live panes refreshed, more sources wired in, or a batch of emails triaged — just ask me in a Claude chat.`;
+  body.appendChild(note);
+}});
+
+/* ============ mount ============ */
+const strip=document.getElementById("strip");
+const indicator=document.getElementById("indicator");
+const chipById={};
+
+/* apply saved lane order (drag-to-reorder persists here) */
+try{
+  const ord=JSON.parse(localStorage.getItem("mc:order")||"[]");
+  if(ord.length) lanes.sort((a,b)=>{const ia=ord.indexOf(a.id),ib=ord.indexOf(b.id);return (ia<0?999:ia)-(ib<0?999:ib);});
+}catch(e){}
+
+/* ---- drag-to-reorder lanes ---- */
+let dragEl=null;
+function getDragAfter(x){
+  const els=[...strip.querySelectorAll(".lane:not(.dragging)")];
+  let best={d:-Infinity,el:null};
+  for(const c of els){ const b=c.getBoundingClientRect(); const off=x-(b.left+b.width/2);
+    if(off<0 && off>best.d) best={d:off,el:c}; }
+  return best.el;
+}
+function saveOrder(){
+  const ids=[...strip.querySelectorAll(".lane")].map(l=>l.id.slice(5));
+  try{ localStorage.setItem("mc:order",JSON.stringify(ids)); }catch(e){}
+  ids.forEach(id=>{ const c=chipById[id]; if(c) indicator.appendChild(c); }); // keep chips in sync
+}
+strip.addEventListener("dragover",e=>{
+  if(!dragEl) return; e.preventDefault();
+  const after=getDragAfter(e.clientX);
+  if(after==null){ if(strip.lastElementChild!==dragEl) strip.appendChild(dragEl); }
+  else if(after!==dragEl) strip.insertBefore(dragEl,after);
+});
+strip.addEventListener("drop",e=>{ if(dragEl) e.preventDefault(); });
+
+/* ---- per-lane width (drag right edge to resize) ---- */
+function loadWidths(){ try{ return JSON.parse(localStorage.getItem("mc:widths")||"{}"); }catch(e){ return {}; } }
+function saveWidth(id,w){ const m=loadWidths(); m[id]=Math.round(w); try{ localStorage.setItem("mc:widths",JSON.stringify(m)); }catch(e){} }
+function removeWidth(id){ const m=loadWidths(); delete m[id]; try{ localStorage.setItem("mc:widths",JSON.stringify(m)); }catch(e){} }
+const widths=loadWidths();
+
+lanes.forEach((cfg)=>{
+  const el=document.createElement("div"); el.className="lane"+(cfg.pin?" pin":"")+(cfg.wide?" wide":"");
+  el.id="lane-"+cfg.id;
+  const head=document.createElement("div"); head.className="lane-head"; head.setAttribute("draggable","true");
+  const count=document.createElement("span"); count.className="count";
+  head.innerHTML=`<span class="grip" title="Drag to reorder">⠿</span><span class="ico">${cfg.icon}</span><h2>${cfg.title}</h2>`;
+  head.appendChild(count);
+  const bodyEl=document.createElement("div"); bodyEl.className="lane-body";
+  el.appendChild(head); el.appendChild(bodyEl); strip.appendChild(el);
+  if(widths[cfg.id]){ el.style.flex="0 0 "+widths[cfg.id]+"px"; el.style.maxWidth=widths[cfg.id]+"px"; }
+  // right-edge resize handle
+  const rez=document.createElement("div"); rez.className="resizer"; rez.title="Drag to resize · double-click to reset"; el.appendChild(rez);
+  (function(lane,id){
+    let sx=0,sw=0,on=false;
+    rez.addEventListener("pointerdown",e=>{ e.preventDefault(); e.stopPropagation(); on=true; sx=e.clientX; sw=lane.getBoundingClientRect().width; lane.classList.add("resizing"); try{rez.setPointerCapture(e.pointerId);}catch(_){}});
+    rez.addEventListener("pointermove",e=>{ if(!on)return; const w=Math.max(240,Math.min(720, sw+(e.clientX-sx))); lane.style.flex="0 0 "+w+"px"; lane.style.maxWidth=w+"px"; });
+    const end=e=>{ if(!on)return; on=false; lane.classList.remove("resizing"); try{rez.releasePointerCapture(e.pointerId);}catch(_){} saveWidth(id, lane.getBoundingClientRect().width); };
+    rez.addEventListener("pointerup",end); rez.addEventListener("pointercancel",end);
+    rez.addEventListener("dblclick",e=>{ e.stopPropagation(); lane.style.flex=""; lane.style.maxWidth=""; removeWidth(id); });
+  })(el,cfg.id);
+  cfg.countEl=count;
+  cfg.render(bodyEl, cfg);
+  if(count.textContent===""){ // static lanes: count children-ish
+    if(cfg.id==="inbox") count.textContent = inbox.reduce((n,g)=>n+g.items.length,0);
+    else if(cfg.id==="today") count.textContent = calendar.reduce((n,d)=>n+d.events.length,0);
+    else count.remove();
+  }
+  head.addEventListener("dragstart",e=>{
+    dragEl=el; strip.classList.add("drag-active");
+    e.dataTransfer.effectAllowed="move";
+    try{ e.dataTransfer.setData("text/plain",el.id); e.dataTransfer.setDragImage(el,24,24); }catch(_){}
+    requestAnimationFrame(()=>el.classList.add("dragging"));
+  });
+  head.addEventListener("dragend",()=>{
+    el.classList.remove("dragging"); strip.classList.remove("drag-active"); dragEl=null; saveOrder();
+  });
+  // indicator chip
+  const chip=document.createElement("button"); chip.textContent=cfg.title;
+  chip.onclick=()=>{ document.getElementById("lane-"+cfg.id).scrollIntoView({behavior:"smooth",inline:"start",block:"nearest"});
+    document.querySelectorAll(".indicator button").forEach(b=>b.classList.remove("active")); chip.classList.add("active"); };
+  chipById[cfg.id]=chip; indicator.appendChild(chip);
+});
+
+/* ============ top bar clock + greeting + focus ============ */
+function tick(){
+  const now=new Date();
+  const opts={weekday:"short",day:"numeric",month:"short",timeZone:TZ};
+  const topts={hour:"numeric",minute:"2-digit",timeZone:TZ};
+  const h=+new Intl.DateTimeFormat("en-US",{hour:"numeric",hour12:false,timeZone:TZ}).format(now);
+  const hi = h<12?"Good morning":h<17?"Good afternoon":h<21?"Good evening":"Working late";
+  document.getElementById("greet").textContent = hi+", Nachiket";
+  document.getElementById("clock").innerHTML =
+    `<b>${new Intl.DateTimeFormat("en-GB",topts).format(now)}</b> · ${new Intl.DateTimeFormat("en-GB",opts).format(now)} · IST`;
+  // focus = Deloitte exam countdown
+  const n=daysUntil("2026-11-21");
+  const f=document.getElementById("focus"), ft=document.getElementById("focustext");
+  if(n>0){ f.className="focuschip"; ft.textContent = `Deloitte exam — ${n===1?"tomorrow":"in "+n+" days"}`; }
+  else if(n===0){ f.className="focuschip"; ft.textContent="Deloitte exam — today, 9 AM"; }
+  else { f.className="focuschip ok"; ft.textContent="You're all caught up ✓"; }
+}
+tick(); setInterval(tick,30000);
+
+/* mark first indicator active */
+indicator.firstChild && indicator.firstChild.classList.add("active");
+
+/* horizontal scroll with vertical wheel when hovering empty strip */
+strip.addEventListener("wheel",e=>{
+  if(e.target.closest(".lane-body")) return; // let lanes scroll vertically
+  if(Math.abs(e.deltaY)>Math.abs(e.deltaX)){ strip.scrollLeft+=e.deltaY; e.preventDefault(); }
+},{passive:false});
+
+/* ============ built-in Claude chat (sample capability) ============ */
+(function(){
+  const dock=document.getElementById("dock"), head=document.getElementById("dockHead"),
+        caret=document.getElementById("dockCaret"), status=document.getElementById("dockStatus"),
+        msgs=document.getElementById("chatMsgs"), hint=document.getElementById("chatHint"),
+        box=document.getElementById("chatBox"), send=document.getElementById("chatSend"), stop=document.getElementById("chatStop");
+  let sampleFn=null, ctl=null, busy=false; const turns=[];
+
+  function open(v){ dock.dataset.open=v?"1":"0"; caret.textContent=v?"▾":"▴"; if(v) setTimeout(()=>{ if(!box.disabled) box.focus(); },60); }
+  head.onclick=()=>open(dock.dataset.open!=="1");
+
+  function down(){ msgs.scrollTop=msgs.scrollHeight; }
+  function bubble(role,text){ if(hint&&hint.parentNode) hint.remove(); const d=document.createElement("div"); d.className="msg "+role; d.textContent=text; msgs.appendChild(d); down(); return d; }
+  function grow(){ box.style.height="auto"; box.style.height=Math.min(120,box.scrollHeight)+"px"; }
+  box.addEventListener("input",grow);
+  box.addEventListener("keydown",e=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); doSend(); } });
+  send.onclick=doSend; stop.onclick=()=>{ if(ctl) ctl.abort(); };
+
+  const RULES="You are Claude, embedded as a chat panel inside Nachiket's personal \"Mission Control\" dashboard (a web page he built with you). Be warm, concise and practical; keep answers short unless he asks for depth. You cannot read his email or browse the web from inside this page — if something needs that, tell him to ask Claude in a normal chat, where his Gmail and Calendar connectors are live. About Nachiket: based in Mumbai (IST), deep in graduate-school applications and job-hunting. Near-term focus: Deloitte exam on Sat 21 Nov, 9 AM. A snapshot of his live board follows — use it when relevant, and don't invent items that aren't there.";
+  function liveContext(){
+    const fmt=k=>{ try{ return load(k).map(i=>"- "+(i.done?"[done] ":"")+i.text+(i.pill?" ("+i.pill+")":"")).join("\n"); }catch(e){ return "(none)"; } };
+    let s="\n\n--- LIVE BOARD ---\nTasks:\n"+fmt("tasks")+"\n\nGrad applications:\n"+fmt("grad")+"\n\nJob hunt:\n"+fmt("jobs")+
+      "\n\nCalendar (snapshot):\n"+calendar.map(d=>d.label+": "+d.events.map(e=>e.t+" "+e.s).join("; ")).join("\n");
+    return s.slice(0,5000);
+  }
+  function errCopy(code){
+    switch(code){
+      case "not_granted": case "sampling_disabled": case "not_declared": case "capability_disabled": case "capability_removed":
+        return "Claude chat isn't available in this view. Open the dashboard while signed in at claude.ai to use it.";
+      case "rate_limited": return "That's a lot of requests at once — give it a moment, then try again.";
+      case "session_expired": return "Your claude.ai session expired. Sign in again and retry.";
+      case "refused": return "I can't help with that particular request.";
+      case "prompt_too_large": return "That got too long for me to read at once — try trimming it.";
+      case "cancelled": return "(stopped)";
+      default: return "Something went wrong reaching Claude. Try again in a moment.";
+    }
+  }
+
+  async function doSend(){
+    if(busy) return;
+    if(!sampleFn){ open(true); return; }
+    const text=box.value.trim(); if(!text) return;
+    box.value=""; grow();
+    bubble("user",text); turns.push({role:"user",content:text});
+    const b=bubble("assistant","Thinking…"); b.classList.add("thinking");
+    busy=true; send.classList.add("hidden"); stop.classList.remove("hidden"); box.disabled=true;
+    ctl=new AbortController();
+    try{
+      const res=await sampleFn([{role:"user",content:RULES+liveContext()}, ...turns],
+        { cache:false, signal:ctl.signal, onText:({text})=>{ b.classList.remove("thinking"); b.textContent=text; down(); } });
+      b.classList.remove("thinking"); b.textContent=res.text; turns.push({role:"assistant",content:res.text});
+    }catch(e){
+      b.classList.remove("thinking");
+      b.textContent=(e&&e.text)?e.text:errCopy(e&&e.code);
+      turns.pop(); // drop the failed user turn so the thread stays clean
+    }finally{
+      busy=false; stop.classList.add("hidden"); send.classList.remove("hidden"); box.disabled=false; if(dock.dataset.open==="1") box.focus(); down();
+    }
+  }
+
+  (async function init(){
+    let s=null;
+    try{ if(window.claude && window.claude.use) s=await window.claude.use("sample"); }catch(e){}
+    sampleFn=s;
+    if(s){ status.textContent="ready"; status.classList.add("ok"); box.disabled=false; send.disabled=false; box.placeholder="Message Claude…"; }
+    else { status.textContent="open in claude.ai to chat"; box.placeholder="Sign in at claude.ai to chat here"; }
+  })();
+})();
+</script>
+</body>
+</html>
