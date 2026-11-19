@@ -600,11 +600,33 @@ function place(el,x,y,w,h){ el.style.left=x+"px"; el.style.top=y+"px"; el.style.
 function fitCanvas(){ let mw=0,mh=0; canvas.querySelectorAll(".lane").forEach(l=>{ mw=Math.max(mw,l.offsetLeft+l.offsetWidth); mh=Math.max(mh,l.offsetTop+l.offsetHeight); }); canvas.style.width=(mw+GAP)+"px"; canvas.style.height=(mh+GAP)+"px"; }
 function defaultFor(cfg,x){ const w=cfg.wide?360:(cfg.pin?300:332); const h=Math.max(MINH,(board.clientHeight||640)-2*GAP); return {x,y:GAP,w,h}; }
 
+/* snap a proposed top-left to align with other blocks (consistent GAP between neighbours) */
+function snapPos(el, nx, ny){
+  const w=el.offsetWidth, h=el.offsetHeight, T=14;
+  let bx=nx, by=ny, dx=T+1, dy=T+1;
+  const tryX=v=>{ const d=Math.abs(nx-v); if(d<dx){ dx=d; bx=v; } };
+  const tryY=v=>{ const d=Math.abs(ny-v); if(d<dy){ dy=d; by=v; } };
+  tryX(GAP); tryY(GAP);                         // snap to the top-left origin
+  canvas.querySelectorAll(".lane").forEach(o=>{
+    if(o===el) return;
+    const ox=o.offsetLeft, oy=o.offsetTop, ow=o.offsetWidth, oh=o.offsetHeight;
+    tryX(ox);            // left edges aligned
+    tryX(ox+ow-w);       // right edges aligned
+    tryX(ox+ow+GAP);     // sit to the right, one gap away
+    tryX(ox-GAP-w);      // sit to the left, one gap away
+    tryY(oy);            // top edges aligned
+    tryY(oy+oh-h);       // bottom edges aligned
+    tryY(oy+oh+GAP);     // stack below, one gap away
+    tryY(oy-GAP-h);      // stack above, one gap away
+  });
+  return { x:Math.max(0,bx), y:Math.max(0,by) };
+}
+
 /* drag a block by its header to move it anywhere */
 function makeMovable(el, handle){
   let sx,sy,ox,oy,on=false; handle.style.touchAction="none";
   handle.addEventListener("pointerdown",e=>{ if(e.target.closest(".rz,.rm")) return; on=true; sx=e.clientX; sy=e.clientY; ox=el.offsetLeft; oy=el.offsetTop; el.classList.add("dragging"); el.style.zIndex=++ztop; try{handle.setPointerCapture(e.pointerId);}catch(_){} e.preventDefault(); });
-  handle.addEventListener("pointermove",e=>{ if(!on)return; el.style.left=Math.max(0,ox+(e.clientX-sx))+"px"; el.style.top=Math.max(0,oy+(e.clientY-sy))+"px"; });
+  handle.addEventListener("pointermove",e=>{ if(!on)return; const nx=Math.max(0,ox+(e.clientX-sx)), ny=Math.max(0,oy+(e.clientY-sy)); const p=snapPos(el,nx,ny); el.style.left=p.x+"px"; el.style.top=p.y+"px"; });
   const end=e=>{ if(!on)return; on=false; el.classList.remove("dragging"); try{handle.releasePointerCapture(e.pointerId);}catch(_){} fitCanvas(); saveLayout(); };
   handle.addEventListener("pointerup",end); handle.addEventListener("pointercancel",end);
 }
