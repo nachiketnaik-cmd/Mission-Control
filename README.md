@@ -9,6 +9,9 @@ applications, job hunt, projects, hobbies, life admin and more. Built with Claud
 - **Movable, resizable blocks** — drag any block by its header (⠿ grip) to place it anywhere;
   drag its right edge, bottom edge, or corner to resize width and height. Positions and sizes
   persist in your browser, and **Reset layout** in the top bar restores the default arrangement.
+- **Add / remove blocks** — **＋ Add block** in the top bar creates your own custom blocks or
+  restores ones you've hidden; the **✕** on any block's header removes it.
+- **The ONE Thing** — a dedicated focus block that shows only your single most important thing.
 - **Editable boards** — tick items off, double-click text to edit, `+` to add, `×` to delete,
   across Tasks, Grad applications, Job hunt, Life admin, Projects, Hobbies and Saved.
   Everything saves locally in your browser (`localStorage`).

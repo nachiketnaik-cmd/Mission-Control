@@ -220,6 +220,32 @@
   .chat-input button:disabled{opacity:.4;cursor:default}
   .chat-input #chatStop{background:var(--red)}
   .hidden{display:none !important}
+
+  /* remove-block button in each header */
+  .lane-head .rm{flex:0 0 auto;border:none;background:none;color:var(--faint);font-size:15px;line-height:1;cursor:pointer;opacity:.3;padding:0 2px;transition:.12s}
+  .lane-head:hover .rm{opacity:.6}
+  .lane-head .rm:hover{opacity:1;color:var(--red)}
+
+  /* add-block popover */
+  .addpanel{position:absolute;top:52px;right:14px;z-index:40;background:var(--lane);border:1px solid var(--line);border-radius:12px;box-shadow:0 14px 36px rgba(0,0,0,.25);width:286px;padding:12px;font-size:12.5px}
+  .addpanel h4{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin:8px 2px 6px}
+  .addpanel h4:first-child{margin-top:0}
+  .addpanel .row{display:flex;gap:6px;margin-bottom:4px}
+  .addpanel input{flex:1;font-family:var(--sans);font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--lane2);color:var(--ink);outline:none}
+  .addpanel input:focus{border-color:var(--accent)}
+  .addpanel button.mk{border:none;background:var(--accent);color:#fff;border-radius:9px;padding:0 13px;font-weight:700;cursor:pointer}
+  .addpanel .restore{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:8px}
+  .addpanel .restore:hover{background:var(--lane2)}
+  .addpanel .restore span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .addpanel .restore button{border:1px solid var(--line);background:var(--lane);color:var(--accent);border-radius:7px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer;flex:0 0 auto}
+  .addpanel .muted{color:var(--faint);padding:2px 2px 4px}
+
+  /* the ONE Thing focus block */
+  .ot-label{font-size:10.5px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;margin:2px 2px 0}
+  .ot-text{font-size:21px;line-height:1.3;font-weight:700;color:var(--ink);padding:10px 4px 12px;margin-top:6px;outline:none;min-height:2.2em;border-bottom:1px dashed var(--line);word-break:break-word}
+  .ot-text:focus{border-bottom-color:var(--accent)}
+  .ot-text[data-empty="1"]::before{content:attr(data-ph);color:var(--faint);font-weight:400;font-style:italic}
+  .ot-hint{font-size:11.5px;color:var(--faint);line-height:1.5;margin-top:12px;padding:0 2px}
 </style>
 </head>
 <body>
@@ -234,9 +260,11 @@
   </div>
   <div class="spacer"></div>
   <div class="clock" id="clock"></div>
+  <button class="resetbtn" id="addBlock" title="Add a new block or restore a hidden one">＋ Add block</button>
   <button class="resetbtn" id="resetLayout" title="Restore the default block layout">⟲ Reset layout</button>
   <div class="focuschip" id="focus"><span class="pulse"></span><span id="focustext">—</span></div>
 </div>
+<div class="addpanel hidden" id="addPanel"></div>
 
 <div class="board" id="board"><div class="canvas" id="canvas"></div></div>
 
@@ -406,6 +434,20 @@ function pillClass(p){ return PILLS[p]||"info"; }
 const lanes = [];
 function lane(cfg){ lanes.push(cfg); }
 
+/* 0. The ONE Thing (single-focus block) */
+lane({id:"onething", icon:"🎯", title:"The ONE Thing", pin:true, render(body){
+  const label=document.createElement("div"); label.className="ot-label"; label.textContent="My single most important thing right now";
+  const txt=document.createElement("div"); txt.className="ot-text"; txt.contentEditable=true; txt.spellcheck=false;
+  txt.setAttribute("data-ph","Tap here to set your one thing…");
+  let val=""; try{ val=localStorage.getItem("mc:onething")||""; }catch(e){}
+  if(val) txt.textContent=val; txt.dataset.empty=val?"0":"1";
+  txt.addEventListener("input",()=>{ txt.dataset.empty=txt.textContent.trim()?"0":"1"; });
+  txt.addEventListener("blur",()=>{ const v=txt.textContent.trim(); try{localStorage.setItem("mc:onething",v);}catch(e){} txt.dataset.empty=v?"0":"1"; });
+  txt.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); txt.blur(); } });
+  const hint=document.createElement("div"); hint.className="ot-hint"; hint.textContent="If you only did this today, the day's a win.";
+  body.appendChild(label); body.appendChild(txt); body.appendChild(hint);
+}});
+
 /* 1. Today / up next (live) */
 lane({id:"today", icon:"📅", title:"Today & up next", pin:true, render(body){
   calendar.forEach(day=>{
@@ -445,8 +487,8 @@ lane({id:"inbox", icon:"✉️", title:"Inbox triage", render(body){
 }});
 
 /* editable lane factory */
-function editable(cfg){
-  lane({id:cfg.id, icon:cfg.icon, title:cfg.title, wide:cfg.wide, editable:true, kind:cfg.kind, note:cfg.note, render(body, self){
+function editableCfg(cfg){
+  return {id:cfg.id, icon:cfg.icon, title:cfg.title, wide:cfg.wide, editable:true, custom:cfg.custom, kind:cfg.kind, note:cfg.note, render(body, self){
     let data = load(cfg.id);
     const list=document.createElement("div"); list.style.cssText="display:flex;flex-direction:column;gap:8px"; body.appendChild(list);
     function redraw(){
@@ -491,8 +533,9 @@ function editable(cfg){
     btn.onclick=addItem; inp.onkeydown=e=>{ if(e.key==="Enter") addItem(); };
     add.appendChild(inp); add.appendChild(btn); body.appendChild(add);
     if(cfg.note){ const n=document.createElement("div"); n.className="lane-note"; n.innerHTML=cfg.note; body.appendChild(n); }
-  }});
+  }};
 }
+function editable(cfg){ lanes.push(editableCfg(cfg)); }
 
 /* 3-11 editable lanes */
 editable({id:"tasks", icon:"✅", title:"Tasks & to-dos", kind:"check", placeholder:"Add a task…"});
@@ -560,7 +603,7 @@ function defaultFor(cfg,x){ const w=cfg.wide?360:(cfg.pin?300:332); const h=Math
 /* drag a block by its header to move it anywhere */
 function makeMovable(el, handle){
   let sx,sy,ox,oy,on=false; handle.style.touchAction="none";
-  handle.addEventListener("pointerdown",e=>{ if(e.target.closest(".rz")) return; on=true; sx=e.clientX; sy=e.clientY; ox=el.offsetLeft; oy=el.offsetTop; el.classList.add("dragging"); el.style.zIndex=++ztop; try{handle.setPointerCapture(e.pointerId);}catch(_){} e.preventDefault(); });
+  handle.addEventListener("pointerdown",e=>{ if(e.target.closest(".rz,.rm")) return; on=true; sx=e.clientX; sy=e.clientY; ox=el.offsetLeft; oy=el.offsetTop; el.classList.add("dragging"); el.style.zIndex=++ztop; try{handle.setPointerCapture(e.pointerId);}catch(_){} e.preventDefault(); });
   handle.addEventListener("pointermove",e=>{ if(!on)return; el.style.left=Math.max(0,ox+(e.clientX-sx))+"px"; el.style.top=Math.max(0,oy+(e.clientY-sy))+"px"; });
   const end=e=>{ if(!on)return; on=false; el.classList.remove("dragging"); try{handle.releasePointerCapture(e.pointerId);}catch(_){} fitCanvas(); saveLayout(); };
   handle.addEventListener("pointerup",end); handle.addEventListener("pointercancel",end);
@@ -576,26 +619,37 @@ function makeResizer(el,h){
   h.addEventListener("pointerup",end); h.addEventListener("pointercancel",end);
 }
 
-let cursorX=GAP;
-lanes.forEach((cfg)=>{
+/* ---- add / remove / custom blocks ---- */
+function loadRemoved(){ try{ return JSON.parse(localStorage.getItem("mc:removed")||"[]"); }catch(e){ return []; } }
+function saveRemoved(a){ try{ localStorage.setItem("mc:removed",JSON.stringify(a)); }catch(e){} }
+function loadCustom(){ try{ return JSON.parse(localStorage.getItem("mc:custom")||"[]"); }catch(e){ return []; } }
+function saveCustom(a){ try{ localStorage.setItem("mc:custom",JSON.stringify(a)); }catch(e){} }
+let removed=loadRemoved();
+function customCfgs(){ return loadCustom().map(c=>editableCfg({id:c.id, icon:c.icon||"📌", title:c.title||"Block", kind:"notes", custom:true, placeholder:"Add…"})); }
+function allCfgs(){ return [...lanes, ...customCfgs()]; }
+
+function buildLane(cfg, defX){
   const el=document.createElement("div"); el.className="lane"+(cfg.pin?" pin":"")+(cfg.wide?" wide":"");
   el.id="lane-"+cfg.id;
   const head=document.createElement("div"); head.className="lane-head";
   const count=document.createElement("span"); count.className="count";
   head.innerHTML=`<span class="grip" title="Drag to move">⠿</span><span class="ico">${cfg.icon}</span><h2>${cfg.title}</h2>`;
   head.appendChild(count);
+  const rm=document.createElement("button"); rm.className="rm"; rm.title="Remove this block"; rm.textContent="✕";
+  rm.onclick=e=>{ e.stopPropagation(); removeBlock(cfg.id); };
+  head.appendChild(rm);
   const bodyEl=document.createElement("div"); bodyEl.className="lane-body";
   el.appendChild(head); el.appendChild(bodyEl);
   el.insertAdjacentHTML("beforeend",'<div class="rz rz-r"></div><div class="rz rz-b"></div><div class="rz rz-se"></div>');
   canvas.appendChild(el);
 
-  const saved=layout[cfg.id], d=defaultFor(cfg,cursorX);
-  if(saved && isFinite(saved.x)){ place(el,saved.x,saved.y,saved.w,saved.h); cursorX=Math.max(cursorX,saved.x+saved.w)+GAP; }
-  else { place(el,d.x,d.y,d.w,d.h); cursorX=d.x+d.w+GAP; }
+  const saved=layout[cfg.id], d=defaultFor(cfg,defX);
+  const use = (saved && isFinite(saved.x)) ? saved : d;
+  place(el,use.x,use.y,use.w,use.h);
 
   cfg.countEl=count;
   cfg.render(bodyEl,cfg);
-  if(count.textContent===""){ if(cfg.id==="inbox") count.textContent=inbox.reduce((n,g)=>n+g.items.length,0); else if(cfg.id==="today") count.textContent=calendar.reduce((n,d)=>n+d.events.length,0); else count.remove(); }
+  if(count.textContent===""){ if(cfg.id==="inbox") count.textContent=inbox.reduce((n,g)=>n+g.items.length,0); else if(cfg.id==="today") count.textContent=calendar.reduce((n,dd)=>n+dd.events.length,0); else if(!cfg.editable) count.remove(); }
 
   makeMovable(el,head);
   el.querySelectorAll(".rz").forEach(hh=>makeResizer(el,hh));
@@ -603,11 +657,62 @@ lanes.forEach((cfg)=>{
   const chip=document.createElement("button"); chip.textContent=cfg.title;
   chip.onclick=()=>{ el.scrollIntoView({behavior:"smooth",inline:"nearest",block:"nearest"}); document.querySelectorAll(".indicator button").forEach(b=>b.classList.remove("active")); chip.classList.add("active"); };
   chipById[cfg.id]=chip; indicator.appendChild(chip);
-});
-fitCanvas();
+  return {x:use.x, w:use.w};
+}
+
+function renderBoard(){
+  canvas.innerHTML=""; indicator.innerHTML=""; for(const k in chipById) delete chipById[k];
+  layout=loadLayout();
+  const list=allCfgs().filter(c=>!removed.includes(c.id));
+  let cx=GAP;
+  list.forEach(cfg=>{ const r=buildLane(cfg,cx); cx=Math.max(cx, r.x+r.w)+GAP; });
+  fitCanvas();
+  if(indicator.firstChild) indicator.firstChild.classList.add("active");
+}
+
+function removeBlock(id){
+  const custom=loadCustom();
+  if(custom.some(c=>c.id===id)){ saveCustom(custom.filter(c=>c.id!==id)); try{localStorage.removeItem("mc:"+id);}catch(e){} }
+  else if(!removed.includes(id)){ removed.push(id); saveRemoved(removed); }
+  const lay=loadLayout(); delete lay[id]; try{localStorage.setItem("mc:layout",JSON.stringify(lay));}catch(e){}
+  renderBoard();
+}
+function addCustomBlock(title){
+  const t=(title||"").trim()||"New block";
+  const custom=loadCustom(); const id="custom-"+Date.now().toString(36);
+  custom.push({id, icon:"📌", title:t}); saveCustom(custom);
+  renderBoard();
+  const el=document.getElementById("lane-"+id); if(el) el.scrollIntoView({behavior:"smooth",inline:"nearest",block:"nearest"});
+}
+function restoreBlock(id){ removed=removed.filter(x=>x!==id); saveRemoved(removed); renderBoard(); }
+
+renderBoard();
+
+/* add-block popover */
+const addBtn=document.getElementById("addBlock"), addPanel=document.getElementById("addPanel");
+function paintAddPanel(){
+  const hidden=lanes.filter(c=>removed.includes(c.id));
+  addPanel.innerHTML="";
+  const h1=document.createElement("h4"); h1.textContent="New custom block"; addPanel.appendChild(h1);
+  const row=document.createElement("div"); row.className="row";
+  const inp=document.createElement("input"); inp.placeholder="Block name…";
+  const mk=document.createElement("button"); mk.className="mk"; mk.textContent="Add";
+  const create=()=>{ if(inp.value.trim()){ addCustomBlock(inp.value); inp.value=""; paintAddPanel(); inp.focus(); } };
+  mk.onclick=create; inp.onkeydown=e=>{ if(e.key==="Enter") create(); };
+  row.appendChild(inp); row.appendChild(mk); addPanel.appendChild(row);
+  const h2=document.createElement("h4"); h2.textContent="Hidden blocks"; addPanel.appendChild(h2);
+  if(!hidden.length){ const m=document.createElement("div"); m.className="muted"; m.textContent="None hidden — every block is showing."; addPanel.appendChild(m); }
+  hidden.forEach(c=>{ const r=document.createElement("div"); r.className="restore";
+    const s=document.createElement("span"); s.textContent=c.icon+" "+c.title;
+    const b=document.createElement("button"); b.textContent="Restore"; b.onclick=()=>{ restoreBlock(c.id); paintAddPanel(); };
+    r.appendChild(s); r.appendChild(b); addPanel.appendChild(r); });
+  setTimeout(()=>inp.focus(),30);
+}
+if(addBtn) addBtn.onclick=e=>{ e.stopPropagation(); if(addPanel.classList.contains("hidden")){ paintAddPanel(); addPanel.classList.remove("hidden"); } else addPanel.classList.add("hidden"); };
+document.addEventListener("click",e=>{ if(addPanel && !addPanel.classList.contains("hidden") && !addPanel.contains(e.target) && e.target!==addBtn){ addPanel.classList.add("hidden"); } });
 
 const resetBtn=document.getElementById("resetLayout");
-if(resetBtn) resetBtn.onclick=()=>{ try{localStorage.removeItem("mc:layout");}catch(e){} layout={}; let cx=GAP; lanes.forEach(cfg=>{ const el=document.getElementById("lane-"+cfg.id); const d=defaultFor(cfg,cx); place(el,d.x,d.y,d.w,d.h); el.style.zIndex=""; cx=d.x+d.w+GAP; }); fitCanvas(); saveLayout(); };
+if(resetBtn) resetBtn.onclick=()=>{ try{localStorage.removeItem("mc:layout");}catch(e){} layout={}; renderBoard(); saveLayout(); };
 
 /* ============ top bar clock + greeting + focus ============ */
 function tick(){
