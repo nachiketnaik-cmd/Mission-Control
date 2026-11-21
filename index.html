@@ -61,6 +61,8 @@
   .focuschip.ok{background:var(--green-soft);color:var(--green)}
   .resetbtn{border:1px solid var(--line);background:var(--lane);color:var(--muted);font-family:var(--sans);font-size:12px;padding:7px 11px;border-radius:999px;cursor:pointer;white-space:nowrap}
   .resetbtn:hover{color:var(--ink);border-color:var(--accent)}
+  .resetbtn:disabled{opacity:.5;cursor:default}
+  .syncstamp{font-size:11px;color:var(--faint);white-space:nowrap}
   .focuschip .pulse{width:7px;height:7px;border-radius:50%;background:currentColor;animation:p 1.8s infinite}
   @keyframes p{0%,100%{opacity:1}50%{opacity:.35}}
 
@@ -260,6 +262,8 @@
   </div>
   <div class="spacer"></div>
   <div class="clock" id="clock"></div>
+  <button class="resetbtn" id="syncNow" title="Pull your latest Gmail & Calendar (works in claude.ai)">🔄 Sync now</button>
+  <span class="syncstamp" id="syncStamp"></span>
   <button class="resetbtn" id="addBlock" title="Add a new block or restore a hidden one">＋ Add block</button>
   <button class="resetbtn" id="resetLayout" title="Restore the default block layout">⟲ Reset layout</button>
   <div class="focuschip" id="focus"><span class="pulse"></span><span id="focustext">—</span></div>
@@ -346,6 +350,12 @@ const inbox = [
   ]},
 ];
 
+/* overlay the last live sync (from Sync now) over the baked snapshot, if present */
+let lastSync=0;
+function setCalendar(a){ calendar.length=0; (a||[]).forEach(x=>calendar.push(x)); }
+function setInbox(a){ inbox.length=0; (a||[]).forEach(x=>inbox.push(x)); }
+try{ const _s=JSON.parse(localStorage.getItem("mc:synced")||"null"); if(_s && Array.isArray(_s.calendar) && Array.isArray(_s.inbox)){ setCalendar(_s.calendar); setInbox(_s.inbox); lastSync=_s.at||0; } }catch(e){}
+
 /* ============ Editable boards (seeded, you own them) ============ */
 const seed = {
   tasks:[
@@ -417,6 +427,7 @@ function save(key,data){
 
 /* ============ helpers ============ */
 const esc = s => s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const TAGLABEL={act:"action",due:"deadline",go:"important",done:"done",info:"info",money:"money"};
 const linkify = s => esc(s).replace(/(https?:\/\/[^\s]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>');
 function daysUntil(dateStr){
   const now=new Date();
@@ -474,10 +485,11 @@ lane({id:"inbox", icon:"✉️", title:"Inbox triage", render(body){
     h.textContent=g.group; body.appendChild(h);
     g.items.forEach(it=>{
       const c=document.createElement("div"); c.className="card";
+      const href=it.url||(it.id?gm(it.id):null);
       c.innerHTML=`<span class="t">${esc(it.t)}</span>
-        <div class="m"><span class="tag ${it.tag}">${it.tag==='act'?'do':it.tag==='due'?'deadline':it.tag}</span><span>${esc(it.m)}</span></div>
+        <div class="m">${it.tag?`<span class="tag ${it.tag}">${TAGLABEL[it.tag]||it.tag}</span>`:""}${it.m?`<span>${esc(it.m)}</span>`:""}</div>
         ${it.note?`<div class="meta">${esc(it.note)}</div>`:""}
-        ${it.id?`<div style="margin-top:6px"><a class="open" href="${gm(it.id)}" target="_blank">Open in Gmail →</a></div>`:""}`;
+        ${href?`<div style="margin-top:6px"><a class="open" href="${href}" target="_blank" rel="noopener">Open in Gmail →</a></div>`:""}`;
       body.appendChild(c);
     });
   });
@@ -735,6 +747,56 @@ document.addEventListener("click",e=>{ if(addPanel && !addPanel.classList.contai
 
 const resetBtn=document.getElementById("resetLayout");
 if(resetBtn) resetBtn.onclick=()=>{ try{localStorage.removeItem("mc:layout");}catch(e){} layout={}; renderBoard(); saveLayout(); };
+
+/* ---- live Sync now: Gmail + Calendar via the mcp capability ---- */
+const syncBtn=document.getElementById("syncNow"), syncStamp=document.getElementById("syncStamp");
+function fmtStamp(ts){ if(!ts) return ""; return "synced "+new Intl.DateTimeFormat("en-GB",{hour:"numeric",minute:"2-digit",timeZone:TZ}).format(new Date(ts)); }
+function setStamp(t){ if(syncStamp) syncStamp.textContent=t; }
+setStamp(lastSync?fmtStamp(lastSync):"");
+function senderName(m){ if(m.addressDisplayNames&&m.addressDisplayNames[0]&&m.addressDisplayNames[0].displayName) return m.addressDisplayNames[0].displayName; const s=m.sender||""; const mm=s.match(/^(.*?)</); return ((mm?mm[1]:s)||"").replace(/"/g,"").trim()||s; }
+function fmtTime(d){ return new Intl.DateTimeFormat("en-US",{hour:"numeric",minute:"2-digit",timeZone:TZ}).format(d); }
+function buildInboxLive(threads){
+  const u=[],i=[],r=[];
+  (threads||[]).forEach(th=>{ const m=(th.messages&&th.messages[0])||{}; const L=m.labelIds||[];
+    const it={t:m.subject||"(no subject)", m:senderName(m), url:m.viewUrl||th.viewUrl||null, tag:""};
+    if(L.indexOf("UNREAD")>=0){ it.tag="act"; u.push(it); } else if(L.indexOf("IMPORTANT")>=0){ it.tag="go"; i.push(it); } else r.push(it);
+  });
+  const out=[];
+  if(u.length) out.push({group:"Unread", items:u.slice(0,15)});
+  if(i.length) out.push({group:"Important", items:i.slice(0,15)});
+  if(r.length) out.push({group:"Recent", items:r.slice(0,15)});
+  if(!out.length) out.push({group:"Inbox", items:[{t:"No recent messages", m:"", tag:""}]});
+  return out;
+}
+function buildCalLive(events){
+  const by={};
+  (events||[]).forEach(ev=>{ if(ev.status==="cancelled") return; const st=ev.start||{}; const iso=st.dateTime||(st.date?st.date+"T09:00:00+05:30":null); if(!iso) return; const d=new Date(iso);
+    const key=new Intl.DateTimeFormat("en-CA",{timeZone:TZ,year:"numeric",month:"2-digit",day:"2-digit"}).format(d);
+    (by[key]=by[key]||[]).push({t: st.date?"All day":fmtTime(d), s: ev.summary||"(busy)"});
+  });
+  return Object.keys(by).sort().map(key=>{ const d=new Date(key+"T12:00:00+05:30"); return {date:key, label:new Intl.DateTimeFormat("en-GB",{weekday:"short",day:"numeric",month:"short",timeZone:TZ}).format(d), events:by[key]}; });
+}
+let syncing=false;
+async function syncNow(){
+  if(syncing) return;
+  let mcp=null; try{ if(window.claude&&window.claude.use) mcp=await window.claude.use("mcp"); }catch(e){}
+  if(!mcp){ setStamp("open in claude.ai to sync"); return; }
+  syncing=true; if(syncBtn) syncBtn.disabled=true; setStamp("syncing…");
+  try{
+    const [g,c]=await Promise.allSettled([
+      mcp.callTool("Gmail","search_threads",{query:"in:inbox newer_than:14d", pageSize:40, view:"THREAD_VIEW_SUMMARY"}),
+      mcp.callTool("Google Calendar","list_events",{pageSize:25, orderBy:"startTime"})
+    ]);
+    let ok=false; const errs=[];
+    if(g.status==="fulfilled"){ setInbox(buildInboxLive((g.value.payload||{}).threads)); ok=true; } else errs.push("email");
+    if(c.status==="fulfilled"){ setCalendar(buildCalLive((c.value.payload||{}).events)); ok=true; } else errs.push("calendar");
+    if(ok){ lastSync=Date.now(); try{ localStorage.setItem("mc:synced",JSON.stringify({at:lastSync, calendar:calendar, inbox:inbox})); }catch(e){} renderBoard(); }
+    setStamp(errs.length ? (ok ? fmtStamp(lastSync)+" · couldn't reach "+errs.join(" & ") : "sync failed — "+errs.join(" & ")) : fmtStamp(lastSync));
+  }catch(e){ setStamp("sync failed — try again"); }
+  finally{ syncing=false; if(syncBtn) syncBtn.disabled=false; }
+}
+if(syncBtn) syncBtn.onclick=syncNow;
+(async function(){ let mcp=null; try{ if(window.claude&&window.claude.use) mcp=await window.claude.use("mcp"); }catch(e){} if(!mcp && syncBtn){ syncBtn.title="Live sync works when you open this in claude.ai"; if(!lastSync) setStamp("live sync: claude.ai only"); } })();
 
 /* ============ top bar clock + greeting + focus ============ */
 function tick(){
